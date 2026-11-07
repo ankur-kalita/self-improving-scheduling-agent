@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 
 from .clinic.db import Clinic
-from .llm import LLM
+from .llm import LLM, QuotaExhausted
 from .policy import AgentPolicy
 from .prompts import render_system_prompt
 from .tools import ToolBox
@@ -74,6 +74,8 @@ class Agent:
                     tools=self.tools.openai_tools(),
                     cache_salt=self.cache_salt,
                 )
+            except QuotaExhausted:
+                raise
             except Exception as e:  # provider failure: degrade safely instead of crashing the call
                 self.errors.append(f"llm_error: {type(e).__name__}: {e}")
                 return self._fallback("llm_error")

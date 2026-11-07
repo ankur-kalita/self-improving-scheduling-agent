@@ -14,7 +14,7 @@ import yaml
 
 from clinic_agent.agent import Agent, Turn
 from clinic_agent.clinic.db import Clinic
-from clinic_agent.llm import LLM
+from clinic_agent.llm import LLM, QuotaExhausted
 from clinic_agent.policy import AgentPolicy
 
 from .checks import global_checks, run_check
@@ -85,6 +85,8 @@ def run_suite(policy: AgentPolicy, llm: LLM, scenarios: list[dict], trials: int 
         s, t = st
         try:
             r = run_scenario(s, policy, llm, t)
+        except QuotaExhausted:
+            raise
         except Exception as e:
             r = {"scenario": s["id"], "split": s["split"], "title": s["title"], "trial": t, "passed": False,
                  "score": 0.0, "checks": [{"id": "harness_error", "kind": "harness", "critical": True,

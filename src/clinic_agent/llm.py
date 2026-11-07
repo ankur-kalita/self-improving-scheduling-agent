@@ -53,15 +53,15 @@ class LLMConfig:
             base = GEMINI_BASE
         else:
             base = None  # OpenAI default
-        default_agent = "gemini-3.5-flash" if base == GEMINI_BASE else "gpt-4.1-mini"
-        default_sim = "gemini-3.5-flash-lite" if base == GEMINI_BASE else "gpt-4.1-mini"
+        # Gemini free-tier quotas are per model, so each role gets its own model to spread load.
+        gem = base == GEMINI_BASE
         return cls(
             base_url=base,
             api_key=key,
-            agent_model=_env("AGENT_MODEL", default_agent),
-            sim_model=_env("SIM_MODEL", default_sim),
-            judge_model=_env("JUDGE_MODEL", default_agent),
-            improver_model=_env("IMPROVER_MODEL", default_agent),
+            agent_model=_env("AGENT_MODEL", "gemini-3.5-flash-lite" if gem else "gpt-4.1-mini"),
+            sim_model=_env("SIM_MODEL", "gemma-4-26b-a4b-it" if gem else "gpt-4.1-mini"),
+            judge_model=_env("JUDGE_MODEL", "gemini-3.1-flash-lite" if gem else "gpt-4.1"),
+            improver_model=_env("IMPROVER_MODEL", "gemini-3.1-flash-lite" if gem else "gpt-4.1"),
             rpm=int(_env("LLM_RPM", "10")),
             cache=_env("LLM_CACHE", "1") == "1",
         )
@@ -141,7 +141,11 @@ class LLM:
                         call["extra_content"] = extra
                     calls.append(call)
                 return {"content": _strip_thoughts(msg.content), "tool_calls": calls}
-            except (RateLimitError, APITimeoutError, APIConnectionError) as e:
+            except RateLimitError as e:
+                if _daily_quota(str(e)):
+                    raise QuotaExhausted(f"{req['model']}: daily quota exhausted. {str(e)[:300]}") from e
+                err = e
+            except (APITimeoutError, APIConnectionError) as e:
                 err = e
             except APIStatusError as e:
                 if e.status_code < 500:
@@ -152,6 +156,16 @@ class LLM:
             time.sleep(delay + random.random())
             delay = min(delay * 2, 65)
         raise RuntimeError("unreachable")
+
+
+class QuotaExhausted(RuntimeError):
+    """Retrying will not help within this run; surface it instead of sleeping for hours."""
+
+
+def _daily_quota(msg: str) -> bool:
+    m = re.search(r"retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", msg)
+    wait = (int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + float(m.group(3))) if m else 0
+    return "per day" in msg.lower() or wait > 300
 
 
 def _strip_thoughts(text: str | None) -> str | None:

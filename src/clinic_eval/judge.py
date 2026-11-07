@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from clinic_agent.llm import LLM, parse_json
+from clinic_agent.llm import LLM, QuotaExhausted, parse_json
 
 from .checks import CheckResult
 
@@ -52,6 +52,8 @@ def judge(llm: LLM, transcript: list, items: list[dict], salt: str = "") -> list
     try:
         out = llm.chat(llm.cfg.judge_model, [{"role": "user", "content": prompt}], json_mode=True, cache_salt=salt)
         verdicts = parse_json(out["content"]).get("items", {})
+    except QuotaExhausted:
+        raise
     except Exception as e:  # judge failure must not look like agent success
         return [CheckResult(it["id"], "judge", it.get("critical", False), False, f"judge error: {e}") for it in items]
 
