@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -52,8 +53,8 @@ class LLMConfig:
             base = GEMINI_BASE
         else:
             base = None  # OpenAI default
-        default_agent = "gemini-2.5-flash" if base == GEMINI_BASE else "gpt-4.1-mini"
-        default_sim = "gemini-2.5-flash-lite" if base == GEMINI_BASE else "gpt-4.1-mini"
+        default_agent = "gemini-3.5-flash" if base == GEMINI_BASE else "gpt-4.1-mini"
+        default_sim = "gemini-3.5-flash-lite" if base == GEMINI_BASE else "gpt-4.1-mini"
         return cls(
             base_url=base,
             api_key=key,
@@ -130,13 +131,16 @@ class LLM:
                 resp = self.client.chat.completions.create(**req)
                 self.calls += 1
                 msg = resp.choices[0].message
-                return {
-                    "content": msg.content,
-                    "tool_calls": [
-                        {"id": tc.id or f"call_{i}", "name": tc.function.name, "arguments": tc.function.arguments or "{}"}
-                        for i, tc in enumerate(msg.tool_calls or [])
-                    ],
-                }
+                calls = []
+                for i, tc in enumerate(msg.tool_calls or []):
+                    call = {"id": tc.id or f"call_{i}", "name": tc.function.name,
+                            "arguments": tc.function.arguments or "{}"}
+                    # Gemini 3 attaches a thought signature that must be echoed back on the next request.
+                    extra = (tc.model_extra or {}).get("extra_content")
+                    if extra:
+                        call["extra_content"] = extra
+                    calls.append(call)
+                return {"content": _strip_thoughts(msg.content), "tool_calls": calls}
             except (RateLimitError, APITimeoutError, APIConnectionError) as e:
                 err = e
             except APIStatusError as e:
@@ -148,6 +152,12 @@ class LLM:
             time.sleep(delay + random.random())
             delay = min(delay * 2, 65)
         raise RuntimeError("unreachable")
+
+
+def _strip_thoughts(text: str | None) -> str | None:
+    if not text:
+        return text
+    return re.sub(r"<thought>.*?</thought>", "", text, flags=re.S).strip() or None
 
 
 def parse_json(text: str | None) -> dict:
