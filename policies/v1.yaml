@@ -1,0 +1,15 @@
+version: 1
+parent: null
+playbook: []
+tool_notes: {}
+runtime:
+  tool_timeout_s: 2.0
+  read_retries: 1
+  retry_backoff_s: 0.2
+  max_tool_calls_per_turn: 8
+  search_max_results: 8
+  search_max_per_day: 3
+history:
+- version: 1
+  note: Hand-written baseline. Core prompt, tools and guards live in code.
+  changes: []
